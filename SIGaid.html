@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>SIGaid</title><meta name="title" content="SIGaid"><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><style id="__livecodes_styles__"></style><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
+  "imports": {}
+}</script></head><body>
+
+
+  <meta charset="utf-8">
+  <title>عرض القواعد GeoJSON</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+
+    .leaflet-popup-content table {
+      border-collapse: collapse;
+      font-size: 12px;
+      direction: ltr;
+    }
+    .leaflet-popup-content th,
+    .leaflet-popup-content td {
+      border: 1px solid #ccc;
+      padding: 2px 6px;
+    }
+    .leaflet-popup-content th { background-color: #f5f5f5; }
+
+    /* تسميات العناصر (étiquettes) كنص فقط بدون خلفية */
+    .feature-label {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
+      font-size: 11px;
+      font-weight: bold;
+      color: #000;
+      text-shadow: 0 0 2px #fff; /* لتحسين القراءة فوق الصور */
+    }
+
+    /* تحكم الخلفيات (أيقونة) */
+    .basemap-control {
+      background: white;
+      border-radius: 4px;
+      box-shadow: 0 0 4px rgba(0,0,0,0.3);
+      padding: 4px;
+    }
+    .basemap-toggle-btn {
+      width: 28px;
+      height: 28px;
+      background: url('https://cdn-icons-png.flaticon.com/512/854/854929.png') center/20px 20px no-repeat;
+      background-color: #fff;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      cursor: pointer;
+    }
+    .basemap-panel {
+      margin-top: 4px;
+      display: none;
+      font-size: 12px;
+      max-width: 180px;
+    }
+    .basemap-panel label {
+      display: block;
+      cursor: pointer;
+      margin-bottom: 2px;
+    }
+
+    /* Légende */
+    .legend-control {
+      background: white;
+      padding: 6px 8px;
+      font-size: 12px;
+      box-shadow: 0 0 4px rgba(0,0,0,0.3);
+      border-radius: 4px;
+      line-height: 18px;
+    }
+    .legend-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      margin-left: 4px;
+      border: 1px solid #555;
+    }
+    .legend-label {
+      flex: 1;
+    }
+  </style>
+
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    var map = L.map('map').setView([31.5, -7.5], 6);
+
+    // الخلفيات
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    });
+
+    var googleStreets = L.tileLayer(
+      'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0','mt1','mt2','mt3']
+      }
+    );
+
+    var googleSat = L.tileLayer(
+      'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0','mt1','mt2','mt3']
+      }
+    );
+
+    var googleHybrid = L.tileLayer(
+      'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0','mt1','mt2','mt3']
+      }
+    ); // hybrid: sat + labels[web:68][web:71]
+
+    // خلفية افتراضية
+    googleHybrid.addTo(map);
+
+    // أنماط الطبقات
+    function styleGabP1() {
+      return { color: "#e41a1c", weight: 2, fillOpacity: 0.3 };
+    }
+    function styleGabP2() {
+      return { color: "#377eb8", weight: 2, fillOpacity: 0.3 };
+    }
+    function styleBayada() {
+      return {
+        color: "#4daf4a",
+        weight: 2,
+        fillOpacity: 0.3
+      };
+    }
+    function styleEnnasr() {
+      return { color: "#984ea3", weight: 2, fillOpacity: 0.3 };
+    }
+
+    // نمط التحديد (أصفر شفاف)
+    var highlightStyle = {
+      color: "#ffff00",
+      fillColor: "#ffff00",
+      weight: 3,
+      fillOpacity: 0.4
+    };
+
+    var selectedFeature = null;
+    var selectedOriginalStyle = null;
+
+    function getCurrentStyle(layer) {
+      return {
+        color: layer.options.color,
+        weight: layer.options.weight,
+        fillOpacity: layer.options.fillOpacity,
+        fillColor: layer.options.fillColor || layer.options.color
+      };
+    }
+
+    // Popup بجميع الحقول + تسمية Name + تمييز + تقريب
+    function onEachFeature(feature, layer) {
+      var props = feature.properties || {};
+
+      // Popup: جدول بكل الحقول
+      var html = "<table>";
+      for (var key in props) {
+        if (!props.hasOwnProperty(key)) continue;
+        html += "<tr><th style='text-align:left;'>" + key + "</th><td>" + props[key] + "</td></tr>";
+      }
+      html += "</table>";
+      layer.bindPopup(html);
+
+      // تسمية من حقل Name (أو الاسم المكافئ) تظهر دائماً كنص فقط
+      var label = props.Name || props.NAME || props.name;
+      if (label) {
+        layer.bindTooltip(label, {
+          permanent: true,
+          direction: "center",
+          className: "feature-label"
+        });
+      }
+
+      // تمييز + تقريب عند النقر
+      layer.on('click', function (e) {
+        if (selectedFeature && selectedOriginalStyle) {
+          selectedFeature.setStyle(selectedOriginalStyle);
+        }
+
+        selectedFeature = e.target;
+        selectedOriginalStyle = getCurrentStyle(e.target);
+
+        e.target.setStyle(highlightStyle);
+        e.target.bringToFront();
+
+        if (e.target.getBounds) {
+          map.fitBounds(e.target.getBounds(), { padding: [20, 20] }); // تقريب مع هامش[web:122][web:133]
+        }
+      });
+    }
+
+    var overlays = {
+      "Gabgab P1": null,
+      "Gabgab P2": null,
+      "Délimitation Bayada": null,
+      "ENNASR": null
+    };
+
+    function addGeojson(url, name, styleFn) {
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          var layer = L.geoJSON(data, {
+            style: styleFn,
+            onEachFeature: onEachFeature
+          });
+          overlays[name] = layer;
+          layer.addTo(map);
+
+          if (Object.values(overlays).filter(l => l).length === 1) {
+            map.fitBounds(layer.getBounds());
+          }
+        });
+    }
+
+    addGeojson("https://raw.githubusercontent.com/sigtopo/SIGAID/refs/heads/main/Gabgab%20P1.geojson", "Gabgab P1", styleGabP1);
+    addGeojson("https://raw.githubusercontent.com/sigtopo/SIGAID/refs/heads/main/Gabgab%20P2.geojson", "Gabgab P2", styleGabP2);
+    addGeojson("https://raw.githubusercontent.com/sigtopo/SIGAID/refs/heads/main/D%C3%A9limitation%20Bayada.geojson", "Délimitation Bayada", styleBayada);
+    addGeojson("https://raw.githubusercontent.com/sigtopo/SIGAID/refs/heads/main/ENNASR.geojson", "ENNASR", styleEnnasr);
+
+    // تحكم الخلفيات بأيقونة
+    var baseMaps = {
+      "OSM": osm,
+      "Google Streets": googleStreets,
+      "Google Satellite": googleSat,
+      "Google Hybrid (Sat + Names)": googleHybrid
+    };
+
+    var BasemapControl = L.Control.extend({
+      options: { position: 'topright' },
+
+      onAdd: function (map) {
+        var container = L.DomUtil.create('div', 'basemap-control');
+        var button = L.DomUtil.create('button', 'basemap-toggle-btn', container);
+        button.type = 'button';
+
+        var panel = L.DomUtil.create('div', 'basemap-panel', container);
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        var first = true;
+        for (var name in baseMaps) {
+          (function (name) {
+            var label = L.DomUtil.create('label', '', panel);
+            var input = L.DomUtil.create('input', '', label);
+            input.type = 'radio';
+            input.name = 'basemap';
+            input.value = name;
+
+            if (first && map.hasLayer(baseMaps[name])) {
+              input.checked = true;
+              first = false;
+            } else if (map.hasLayer(baseMaps[name])) {
+              input.checked = true;
+            }
+            label.appendChild(document.createTextNode(' ' + name));
+
+            input.addEventListener('change', function () {
+              for (var key in baseMaps) {
+                if (map.hasLayer(baseMaps[key])) map.removeLayer(baseMaps[key]);
+              }
+              baseMaps[name].addTo(map);
+            });
+          })(name);
+        }
+
+        button.onclick = function () {
+          panel.style.display =
+            (panel.style.display === 'none' || panel.style.display === '') ? 'block' : 'none';
+        };
+
+        return container;
+      }
+    });
+
+    map.addControl(new BasemapControl());
+
+    // Légende + تفعيل/إيقاف الطبقات
+    var LegendControl = L.Control.extend({
+      options: { position: 'bottomright' },
+
+      onAdd: function (map) {
+        var container = L.DomUtil.create('div', 'legend-control');
+        container.innerHTML = '<div class="legend-title">Légende</div>';
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        var items = [
+          { name: "Délimitation Bayada", color: "#4daf4a" },
+          { name: "Gabgab P1", color: "#e41a1c" },
+          { name: "Gabgab P2", color: "#377eb8" },
+          { name: "ENNASR", color: "#984ea3" }
+        ];
+
+        items.forEach(function (item) {
+          var row = L.DomUtil.create('div', 'legend-item', container);
+
+          var checkbox = L.DomUtil.create('input', '', row);
+          checkbox.type = 'checkbox';
+          checkbox.checked = true;
+          checkbox.style.marginRight = '4px';
+
+          var colorBox = L.DomUtil.create('div', 'legend-color', row);
+          colorBox.style.backgroundColor = item.color;
+
+          var label = L.DomUtil.create('span', 'legend-label', row);
+          label.textContent = item.name;
+
+          checkbox.addEventListener('change', function () {
+            var layer = overlays[item.name];
+            if (!layer) return;
+            if (checkbox.checked) {
+              if (!map.hasLayer(layer)) map.addLayer(layer);
+            } else {
+              if (map.hasLayer(layer)) map.removeLayer(layer);
+            }
+          });
+        });
+
+        return container;
+      }
+    });
+
+    map.addControl(new LegendControl());
+
+    // منطق لإظهار/إخفاء التسميات حسب الزوم لتقليل التداخل
+    var labelMinZoom = 14; // تظهر التسميات ابتداءً من هذا الزوم
+
+    map.on('zoomend', function () {
+      var z = map.getZoom();
+      var showLabels = z >= labelMinZoom;
+
+      Object.values(overlays).forEach(function (layer) {
+        if (!layer) return;
+        layer.eachLayer(function (fLayer) {
+          if (!fLayer.getTooltip()) return;
+          if (showLabels) {
+            fLayer.openTooltip();
+          } else {
+            fLayer.closeTooltip();
+          }
+        });
+      });
+    });
+
+  </script>
+
+
+<script></script></body></html>
