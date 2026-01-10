@@ -1,15 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" class=""><head><script>window.livecodes = window.livecodes || {};</script><title>SIGaid</title><meta name="title" content="SIGaid"><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0"><style id="__livecodes_styles__"></style><script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" async=""></script><script type="importmap">{
-  "imports": {}
-}</script></head><body>
-
-
-  <meta charset="utf-8">
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
   <title>عرض القواعد GeoJSON</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
@@ -26,7 +22,7 @@
     }
     .leaflet-popup-content th { background-color: #f5f5f5; }
 
-    /* تسميات العناصر (étiquettes) كنص فقط بدون خلفية */
+    /* étiquettes: نص أبيض بظل/حافة داكنة */
     .feature-label {
       background: transparent;
       border: none;
@@ -35,8 +31,12 @@
       margin: 0;
       font-size: 11px;
       font-weight: bold;
-      color: #000;
-      text-shadow: 0 0 2px #fff; /* لتحسين القراءة فوق الصور */
+      color: #fff;
+      text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
     }
 
     /* تحكم الخلفيات (أيقونة) */
@@ -83,20 +83,72 @@
     .legend-item {
       display: flex;
       align-items: center;
-      margin-bottom: 2px;
+      margin-bottom: 4px;
     }
     .legend-color {
       width: 16px;
       height: 16px;
-      margin-left: 4px;
+      margin-right: 6px;
       border: 1px solid #555;
+      flex-shrink: 0;
     }
     .legend-label {
       flex: 1;
     }
+    .legend-item input[type="checkbox"] {
+      margin-left: 6px;
+    }
+
+    /* خانة البحث عن Name مع قائمة اقتراحات */
+    .search-control {
+      background: white;
+      padding: 4px 6px;
+      border-radius: 4px;
+      box-shadow: 0 0 4px rgba(0,0,0,0.3);
+      font-size: 12px;
+      min-width: 200px;
+      position: relative;
+    }
+    .search-input {
+      width: 100%;
+      padding: 3px 6px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      box-sizing: border-box;
+    }
+    .search-suggestions {
+      position: absolute;
+      top: 30px;
+      left: 0;
+      right: 0;
+      max-height: 180px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      z-index: 1000;
+      display: none;
+    }
+    .search-suggestion-item {
+      padding: 4px 6px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .search-suggestion-item:hover {
+      background: #f0f0f0;
+    }
+    .search-highlight {
+      font-weight: bold;
+      color: #0078ff;
+    }
   </style>
-
-
+</head>
+<body>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -130,7 +182,6 @@
       }
     ); // hybrid: sat + labels[web:68][web:71]
 
-    // خلفية افتراضية
     googleHybrid.addTo(map);
 
     // أنماط الطبقات
@@ -161,6 +212,7 @@
 
     var selectedFeature = null;
     var selectedOriginalStyle = null;
+    var labelsEnabled = true; // التحكم العام في étiquettes
 
     function getCurrentStyle(layer) {
       return {
@@ -192,6 +244,9 @@
           direction: "center",
           className: "feature-label"
         });
+        if (!labelsEnabled) {
+          layer.closeTooltip();
+        }
       }
 
       // تمييز + تقريب عند النقر
@@ -207,7 +262,7 @@
         e.target.bringToFront();
 
         if (e.target.getBounds) {
-          map.fitBounds(e.target.getBounds(), { padding: [20, 20] }); // تقريب مع هامش[web:122][web:133]
+          map.fitBounds(e.target.getBounds(), { padding: [20, 20] });
         }
       });
     }
@@ -299,7 +354,7 @@
 
     map.addControl(new BasemapControl());
 
-    // Légende + تفعيل/إيقاف الطبقات
+    // Légende + تفعيل/إيقاف الطبقات + سطر étiquettes
     var LegendControl = L.Control.extend({
       options: { position: 'bottomright' },
 
@@ -320,16 +375,15 @@
         items.forEach(function (item) {
           var row = L.DomUtil.create('div', 'legend-item', container);
 
-          var checkbox = L.DomUtil.create('input', '', row);
-          checkbox.type = 'checkbox';
-          checkbox.checked = true;
-          checkbox.style.marginRight = '4px';
-
           var colorBox = L.DomUtil.create('div', 'legend-color', row);
           colorBox.style.backgroundColor = item.color;
 
           var label = L.DomUtil.create('span', 'legend-label', row);
           label.textContent = item.name;
+
+          var checkbox = L.DomUtil.create('input', '', row);
+          checkbox.type = 'checkbox';
+          checkbox.checked = true;
 
           checkbox.addEventListener('change', function () {
             var layer = overlays[item.name];
@@ -342,24 +396,53 @@
           });
         });
 
+        // سطر خاص للتحكم في étiquettes
+        var rowLabels = L.DomUtil.create('div', 'legend-item', container);
+
+        var colorBoxLbl = L.DomUtil.create('div', 'legend-color', rowLabels);
+        colorBoxLbl.style.backgroundColor = "#ffffff";
+        colorBoxLbl.style.border = "1px solid #000";
+
+        var labelLbl = L.DomUtil.create('span', 'legend-label', rowLabels);
+        labelLbl.textContent = "étiquettes";
+
+        var checkboxLbl = L.DomUtil.create('input', '', rowLabels);
+        checkboxLbl.type = 'checkbox';
+        checkboxLbl.checked = true;
+
+        checkboxLbl.addEventListener('change', function () {
+          labelsEnabled = checkboxLbl.checked;
+          Object.values(overlays).forEach(function (layer) {
+            if (!layer) return;
+            layer.eachLayer(function (fLayer) {
+              if (!fLayer.getTooltip()) return;
+              if (labelsEnabled) {
+                fLayer.openTooltip();
+              } else {
+                fLayer.closeTooltip();
+              }
+            });
+          });
+        });
+
         return container;
       }
     });
 
     map.addControl(new LegendControl());
 
-    // منطق لإظهار/إخفاء التسميات حسب الزوم لتقليل التداخل
-    var labelMinZoom = 14; // تظهر التسميات ابتداءً من هذا الزوم
+    // إظهار/إخفاء التسميات حسب الزوم (مع احترام labelsEnabled)
+    var labelMinZoom = 14;
 
     map.on('zoomend', function () {
       var z = map.getZoom();
-      var showLabels = z >= labelMinZoom;
+      var showLabelsByZoom = z >= labelMinZoom;
 
       Object.values(overlays).forEach(function (layer) {
         if (!layer) return;
         layer.eachLayer(function (fLayer) {
           if (!fLayer.getTooltip()) return;
-          if (showLabels) {
+          if (showLabelsByZoom && labelsEnabled) {
             fLayer.openTooltip();
           } else {
             fLayer.closeTooltip();
@@ -368,7 +451,110 @@
       });
     });
 
+    // تحكم البحث الاحترافي مع اقتراحات
+    var SearchControl = L.Control.extend({
+      options: { position: 'topleft' },
+
+      onAdd: function (map) {
+        var container = L.DomUtil.create('div', 'search-control');
+
+        var input = L.DomUtil.create('input', 'search-input', container);
+        input.type = 'text';
+        input.placeholder = 'ابحث عن...';
+
+        var suggestions = L.DomUtil.create('div', 'search-suggestions', container);
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        function clearSuggestions() {
+          suggestions.innerHTML = '';
+          suggestions.style.display = 'none';
+        }
+
+        function highlightMatch(text, query) {
+          var regex = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+          return text.replace(regex, '<span class="search-highlight">$1</span>');
+        }
+
+        function searchByName(query) {
+          query = query.trim().toLowerCase();
+          if (!query || query.length < 1) {
+            clearSuggestions();
+            return;
+          }
+
+          var results = [];
+
+          Object.values(overlays).forEach(function (layer) {
+            if (!layer) return;
+            layer.eachLayer(function (fLayer) {
+              var p = fLayer.feature && fLayer.feature.properties;
+              if (!p) return;
+              var name = (p.Name || p.NAME || p.name || '').toString();
+              var lower = name.toLowerCase();
+              if (lower.indexOf(query) !== -1 && name) {
+                results.push({ name: name, layer: fLayer });
+              }
+            });
+          });
+
+          var seen = {};
+          results = results.filter(function (r) {
+            if (seen[r.name]) return false;
+            seen[r.name] = true;
+            return true;
+          });
+
+          clearSuggestions();
+          if (results.length === 0) {
+            return;
+          }
+
+          results.slice(0, 10).forEach(function (r) {
+            var item = L.DomUtil.create('div', 'search-suggestion-item', suggestions);
+            item.innerHTML = highlightMatch(r.name, query);
+            item.onclick = function () {
+              zoomToFeature(r.layer);
+              clearSuggestions();
+            };
+          });
+
+          suggestions.style.display = 'block';
+        }
+
+        function zoomToFeature(fLayer) {
+          if (selectedFeature && selectedOriginalStyle) {
+            selectedFeature.setStyle(selectedOriginalStyle);
+          }
+          selectedFeature = fLayer;
+          selectedOriginalStyle = getCurrentStyle(fLayer);
+
+          fLayer.setStyle(highlightStyle);
+          fLayer.bringToFront();
+
+          if (fLayer.getBounds) {
+            map.fitBounds(fLayer.getBounds(), { padding: [20, 20] });
+          }
+          if (fLayer.getPopup()) {
+            fLayer.openPopup();
+          }
+        }
+
+        input.addEventListener('input', function () {
+          searchByName(input.value);
+        });
+
+        input.addEventListener('blur', function () {
+          setTimeout(clearSuggestions, 200);
+        });
+
+        return container;
+      }
+    });
+
+    map.addControl(new SearchControl());
+
   </script>
-
-
-<script></script></body></html>
+</body>
+</html>
